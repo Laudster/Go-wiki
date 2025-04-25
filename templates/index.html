@@ -1,0 +1,16 @@
+<h1> Wiki </h1>
+
+<ul>
+    {{range .}}
+        <li>
+            <a href="/view/{{.}}"> {{printf "%s" .}} </a> <br>
+        </li>
+    {{end}}
+</ul>
+
+<style>
+    li
+    {
+        margin-bottom: 1rem;
+    }
+</style>

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"path/filepath"
 )
 
 type Page struct {
@@ -15,61 +16,57 @@ type Page struct {
 	Body []byte
 }
 
-var templates = template.Must(template.ParseFiles("edit.html", "view.html"))
+var templates = template.Must(template.ParseFiles("templates/index.html", "templates/edit.html", "templates/view.html"))
 
 var validPath  = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
 func (p *Page) save() error {
 	filename := p.Title + ".txt"
 
-	return os.WriteFile(filename, p.Body, 0600)
+	return os.WriteFile("articles/" + filename, p.Body, 0600)
 }
 
 func load(title string) (*Page, error) {
 	filename := title + ".txt"
-	body, err := os.ReadFile(filename)
+	body, err := os.ReadFile("articles/" + filename)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return &Page{Title: title, Body: body}, nil;
+	return &Page{Title: title, Body: body}, nil
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	err := templates.ExecuteTemplate(w, tmpl + ".html", p);
+	err := templates.ExecuteTemplate(w, tmpl + ".html", p)
 
 	if err != nil {
-		http.Error(w, "Error parsing template: " + err.Error(), http.StatusInternalServerError)
-
-		return
-	}
-
-	t.Execute(w, p);
-
-	if err != nil {
-		http.Error(w, "Error executing template: " + err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Could not load template: " + err.Error(), http.StatusInternalServerError)
 
 		return
 	}
 }
 
-func getTitle(w http.ResponseWriter, r *http.Request) (string error) {
-	m := validPath.FindStringSubmatch(r.URL.Path)
+func frontHandler(w http.ResponseWriter, r *http.Request) {
+	entries, _ := os.ReadDir("articles")
 
-	if m == nil {
-		http.NotFound(w, r);
-		return "", errors.New("Invalid page title")
+	var articles []string
+
+	for _, entry := range entries {
+		title := entry.Name()[:len(entry.Name())-len(filepath.Ext(entry.Name()))]
+		articles = append(articles, title)
+	}
+
+	err := templates.ExecuteTemplate(w, "index.html", articles)
+
+	if err != nil {
+		http.Error(w, "Could not the load template: " + err.Error(), http.StatusInternalServerError)
+
+		return
 	}
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request) {
-	title, err := getTitle(w, r);
-
-	if err != nil {
-		return
-	}
-
+func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := load(title)
 
 	if err != nil {
@@ -77,32 +74,20 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	renderTemplate(w, "view", p);
+	renderTemplate(w, "view", p)
 }
 
-func editHandler(w http.ResponseWriter, r *http.Request) {
-	title, err := getTitle(w, r);
-
-	if err != nil {
-		return
-	}
-
+func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := load(title)
 
 	if err != nil {
 		p = &Page{Title: title}
 	}
 
-	renderTemplate(w, "edit", p);
+	renderTemplate(w, "edit", p)
 }
 
-func saveHandler(w http.ResponseWriter, r *http.Request) {
-	title, err := getTitle(w, r);
-
-	if err != nil {
-		return
-	}
-
+func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	body := r.FormValue("body")
 
 	p := &Page{Title: title, Body: []byte(body)}
@@ -115,9 +100,24 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view/" + title, http.StatusFound)
 }
 
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m := validPath.FindStringSubmatch(r.URL.Path)
+
+		if m == nil {
+			http.NotFound(w, r)
+			
+			return
+		}
+
+		fn(w, r, m[2])
+	}
+}
+
 func main() {
-	http.HandleFunc("/view/", viewHandler)
-	http.HandleFunc("/edit/", editHandler)
-	http.HandleFunc("/save/", saveHandler)
+	http.HandleFunc("/", frontHandler)
+	http.HandleFunc("/view/", makeHandler(viewHandler))
+	http.HandleFunc("/edit/", makeHandler(editHandler))
+	http.HandleFunc("/save/", makeHandler(saveHandler))
 	log.Fatal(http.ListenAndServe(":80", nil))
 }
