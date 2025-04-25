@@ -37,8 +37,8 @@ func load(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	err := templates.ExecuteTemplate(w, tmpl + ".html", p)
+func renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
+	err := templates.ExecuteTemplate(w, tmpl + ".html", data)
 
 	if err != nil {
 		http.Error(w, "Could not load template: " + err.Error(), http.StatusInternalServerError)
@@ -48,7 +48,13 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 }
 
 func frontHandler(w http.ResponseWriter, r *http.Request) {
-	entries, _ := os.ReadDir("articles")
+	entries, err := os.ReadDir("articles")
+
+	if err != nil {
+		http.Error(w, "Error gathering article entries: " + err.Error(), http.StatusInternalServerError)
+
+		return
+	}
 
 	var articles []string
 
@@ -57,13 +63,7 @@ func frontHandler(w http.ResponseWriter, r *http.Request) {
 		articles = append(articles, title)
 	}
 
-	err := templates.ExecuteTemplate(w, "index.html", articles)
-
-	if err != nil {
-		http.Error(w, "Could not the load template: " + err.Error(), http.StatusInternalServerError)
-
-		return
-	}
+	renderTemplate(w, "index", articles)
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
